@@ -105,3 +105,21 @@ def test_rare_name_match_kept_but_marked():
     out = L.build_leads(cases, hits, counts, TODAY)
     assert out and out[0]["match"] == "name match"
     assert any("name only" in r for r in out[0]["score_reasons"])
+
+
+def test_name_match_with_other_coowner_dropped():
+    cases = _cases()
+    names, addrs = L.wanted(cases)
+    hits, counts = P.scan_parcels([row("77", "HILL", "RD", "ISAAC ELLEN M & ROBERT JONES")], names, addrs)
+    assert L.build_leads(cases, hits, counts, TODAY) == []
+
+
+def test_city_from_owner_address():
+    cases = _cases()
+    names, addrs = L.wanted(cases)
+    r = row("8", "PINE", "LN", "EASTERLING KENNETH & ELLEN", OWNAD1="8 PINE LANE", OWNADCITY="LOVELAND",
+            OWNADSTATE="OH", OWNADZIP="45140")
+    hits, counts = P.scan_parcels([r], names, addrs)
+    out = L.build_leads(cases, hits, counts, TODAY)
+    assert out[0]["match"] == "owned by both spouses"
+    assert (out[0]["city"], out[0]["zip"]) == ("Loveland", "45140")

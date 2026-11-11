@@ -162,12 +162,20 @@ def parcel_info(row) -> dict:
     own1 = " ".join(p for p in (_g(row, "OWNAD1"), _g(row, "OWNAD1A")) if p)
     own_csz = " ".join(p for p in (_g(row, "OWNADCITY"), _g(row, "OWNADSTATE"), _g(row, "OWNADZIP")[:5]) if p)
     mail = ", ".join(p for p in ((own1, own_csz) if own1 and own_csz else (_g(row, "MLADR1"), _g(row, "MLADR2"))) if p)
+    site = " ".join(p for p in (no, dr, st, sf) if p)
+    city, zipc = "", ""
+    # Owner-occupied: the owner's own address is the site address, so it gives the city and ZIP.
+    if own1 and own_csz and normalize_address(own1) == normalize_address(site):
+        m = re.match(r"^(.*?)\s+([A-Z]{2})\s+(\d{5})$", own_csz.upper())
+        if m:
+            city, zipc = m.group(1).title(), m.group(3)
     return {
         "parcel": re.sub(r"\D", "", parcel_id),
+        "city": city,
         "address": " ".join(p for p in (no, dr, st, sf) if p),
         "keys": sorted({k for k in (normalize_address(" ".join(p for p in (no, st, sf) if p)),
                                     normalize_address(" ".join(p for p in (no, dr, st, sf) if p))) if k}),
-        "zip": _g(row, "ZIPCODE")[:5] or _g(row, "ZIP")[:5],
+        "zip": zipc,
         "owner_name": " ".join(p for p in (_g(row, "OWNNM1"), _g(row, "OWNNM2")) if p),
         "mailing_address": mail,
         "market_value": _num(row.get("MKTLND")) + _num(row.get("MKTIMP")),
@@ -208,4 +216,6 @@ def scan_parcels(rows, wanted_names: set[tuple[str, str]], wanted_addrs: set[str
 
 def read_cagis(path: Path, wanted_names, wanted_addrs):
     with path.open(encoding="latin-1", newline="") as f:
-        return scan_parcels(csv.DictReader(f), wanted_names, wanted_addrs)
+        reader = csv.DictReader(f)
+        log.info("CAGIS columns: %s", ",".join(reader.fieldnames or []))
+        return scan_parcels(reader, wanted_names, wanted_addrs)

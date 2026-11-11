@@ -86,16 +86,24 @@ def match_case(sp: list[dict], by_name: dict, by_addr: dict, name_counts: dict) 
         owners = [s for s in sp if any(same_person(s, o) for o in h.get("owners", []))]
         if not owners:
             continue        # someone else owns it (a landlord, a parent) - not their home to sell
+        # The other spouse may be on the deed under the married name (court uses the maiden name).
+        lasts = {o["last"] for o in owners}
+        owners += [s for s in sp if s not in owners and any(
+            o["first"] == s["first"] and o["last"] in lasts and not any(same_person(m, o) for m in owners)
+            for o in h.get("owners", []))]
         home = next((s for s in sp if s["addr_key"] and s["addr_key"] in h["keys"]), None)
         at_home = home is not None
         joint = len(sp) >= 2 and len(owners) >= 2
         if not at_home and not joint:
             if any(name_counts.get(name_key(s), 99) > config.NAME_ONLY_MAX_PARCELS for s in owners):
                 continue    # common name, no address to back it up
+            if len(h.get("owners", [])) > len(owners):
+                continue    # deed shared with someone who isn't the other spouse: likely a different person
         match = ("home at spouse's address" if at_home else "owned by both spouses" if joint else "name match")
         out.append({**{k: v for k, v in h.items() if k not in ("owners", "keys")},
                     "match": match, "owned_by": [s["name"] for s in owners],
-                    "city": (home or {}).get("city", ""), "zip": (home or {}).get("zip", "") or h.get("zip", "")})
+                    "city": (home or {}).get("city", "") or h.get("city", ""),
+                    "zip": (home or {}).get("zip", "") or h.get("zip", "")})
     rank = {"home at spouse's address": 0, "owned by both spouses": 1, "name match": 2}
     return sorted(out, key=lambda p: (rank[p["match"]], -p["market_value"]))
 
