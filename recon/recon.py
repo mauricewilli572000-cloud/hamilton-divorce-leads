@@ -14,17 +14,10 @@ def get(cn, sec="party"):
     return body(r.text)
 def exists(cn):
     return "Filed Date" in txt(get(cn, "sum"))
-for yr, lo, hi in [("26", 1000, 9999), ("25", 1000, 9999)]:
-    while hi - lo > 1:
-        mid = (lo + hi) // 2
-        if exists(f"DR{yr}{mid:05d}"): lo = mid
-        else: hi = mid
-    out("last", {"year": yr, "last": lo})
-    if yr == "26": last26 = lo
-for n in [last26, last26 - 3, last26 - 10, last26 - 40]:
-    cn = f"DR26{n:05d}"
-    for sec in ["sum", "party", "history"]:
+for cn in ["DR2601559", "DR2601540"]:
+    for sec in ["sum", "party"]:
         p = get(cn, sec)
-        i = p.find("Case Number")
-        main = p[max(0, i-500): i+9000] if i >= 0 else p[-9000:]
-        out("page", {"cn": cn, "sec": sec, "text": txt(main)[:3500], "html": main[:4000] if sec == "party" and n == last26 else ""})
+        i = p.find("Filed Date")
+        main = p[max(0, i-3000): i+8000]
+        rows = [[txt(c) for c in re.findall(r"<t[hd][^>]*>(.*?)</t[hd]>", r, re.S)] for r in re.findall(r"<tr[^>]*>(.*?)</tr>", main, re.S)]
+        out("page", {"cn": cn, "sec": sec, "rows": rows[:60]})
