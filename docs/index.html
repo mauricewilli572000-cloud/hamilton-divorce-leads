@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hamilton County Divorce Leads</title>
+<style>
+  :root { --bg:#f7f7f5; --fg:#1d1d1b; --mute:#6b6b66; --card:#fff; --line:#e2e2dc; --hot:#b3261e; --warm:#b26a00; --ok:#3d6b2f; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#161615; --fg:#ecece8; --mute:#9a9a93; --card:#1f1f1d; --line:#33332f; --hot:#ff8a80; --warm:#ffb74d; --ok:#9ccc65; }
+  }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.45 system-ui,sans-serif; }
+  header { padding:16px; }
+  h1 { margin:0 0 4px; font-size:20px; }
+  .meta { color:var(--mute); }
+  .bar { display:flex; flex-wrap:wrap; gap:10px; align-items:center; padding:0 16px 12px; }
+  .bar input[type=search], .bar select { padding:6px 8px; border:1px solid var(--line); border-radius:6px; background:var(--card); color:var(--fg); }
+  .wrap { overflow-x:auto; padding:0 16px 24px; }
+  table { border-collapse:collapse; width:100%; min-width:960px; background:var(--card); }
+  th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { cursor:pointer; user-select:none; position:sticky; top:0; background:var(--card); }
+  .score { font-weight:700; }
+  .hot { color:var(--hot); } .warm { color:var(--warm); } .ok { color:var(--ok); }
+  .tag { display:inline-block; padding:1px 6px; margin:1px 2px 1px 0; border:1px solid var(--line); border-radius:10px; font-size:12px; }
+  small { color:var(--mute); }
+  a { color:inherit; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Hamilton County divorce leads (homeowners)</h1>
+  <div class="meta" id="meta">Loading…</div>
+</header>
+<div class="bar">
+  <input type="search" id="q" placeholder="Search address, name, parcel, case…" size="32">
+  <label>Min score <select id="min"><option>0</option><option selected>50</option><option>65</option><option>85</option></select></label>
+  <label>Match <select id="match"><option value="">any</option><option>home at spouse's address</option><option>owned by both spouses</option><option>name match</option></select></label>
+  <label><input type="checkbox" id="apart"> living apart</label>
+  <label><input type="checkbox" id="distress"> tax / foreclosure</label>
+  <a href="ghl_hamilton_divorce.csv" download>Download GHL CSV</a>
+  <span class="meta" id="count"></span>
+</div>
+<div class="wrap">
+  <table>
+    <thead><tr id="head"></tr></thead>
+    <tbody id="body"></tbody>
+  </table>
+</div>
+<script>
+const COLS = [
+  ["score","Score"], ["property_address","Property"], ["spouses","Spouses"], ["case_label","Case"],
+  ["match","Match"], ["market_value","Value"], ["filed_date","Filed"]
+];
+let rows = [], sortKey = "score", sortDir = -1;
+const money = v => v ? "$" + Math.round(v).toLocaleString() : "";
+
+function td(text, cls) { const c = document.createElement("td"); c.textContent = text ?? ""; if (cls) c.className = cls; return c; }
+function line(parent, text, small) {
+  if (parent.childNodes.length) parent.append(document.createElement("br"));
+  const n = small ? document.createElement("small") : document.createTextNode(text);
+  if (small) n.textContent = text;
+  parent.append(n);
+}
+const apart = r => new Set((r.spouses || []).map(s => (s.address || "").toLowerCase())).size > 1;
+
+function render() {
+  const q = document.getElementById("q").value.trim().toLowerCase();
+  const min = +document.getElementById("min").value;
+  const match = document.getElementById("match").value;
+  const needApart = document.getElementById("apart").checked;
+  const distress = document.getElementById("distress").checked;
+  const shown = rows.filter(r =>
+    r.score >= min && (!match || r.match === match) && (!needApart || apart(r)) &&
+    (!distress || r.delinquent_taxes || r.in_foreclosure) &&
+    (!q || [r.property_address, r.parcel, r.case_number, r.owner_name, ...(r.spouses || []).map(s => s.name + " " + s.address)]
+      .join(" ").toLowerCase().includes(q))
+  ).sort((a, b) => {
+    let x = a[sortKey], y = b[sortKey];
+    if (sortKey === "spouses") { x = (x[0] || {}).name; y = (y[0] || {}).name; }
+    const cmp = (typeof x === "number" && typeof y === "number") ? x - y : String(x ?? "").localeCompare(String(y ?? ""));
+    return cmp * sortDir;
+  });
+  document.getElementById("count").textContent = `${shown.length} of ${rows.length} leads`;
+  document.getElementById("body").replaceChildren(...shown.map(r => {
+    const tr = document.createElement("tr");
+    tr.title = (r.score_reasons || []).join("\n");
+    tr.append(td(r.score, "score " + (r.score >= 85 ? "hot" : r.score >= 65 ? "warm" : "ok")));
+    const p = document.createElement("td");
+    line(p, r.property_address);
+    line(p, [r.city, r.zip].filter(Boolean).join(" ") + (r.parcel ? " · " + r.parcel : ""), true);
+    line(p, "Owner: " + r.owner_name, true);
+    if (r.property_count > 1) line(p, `+${r.property_count - 1} more: ` + r.properties.slice(1).map(x => x.address).join("; "), true);
+    const s = document.createElement("td");
+    (r.spouses || []).forEach(x => { line(s, x.name); line(s, x.address + (x.attorney ? " · atty " + x.attorney : ""), true); });
+    const c = document.createElement("td");
+    const a = document.createElement("a"); a.href = r.case_url; a.target = "_blank"; a.rel = "noopener"; a.textContent = r.case_number;
+    c.append(document.createTextNode(r.case_label), document.createElement("br"), a);
+    const m = document.createElement("td");
+    [r.match, apart(r) ? "living apart" : "", r.delinquent_taxes ? "tax delinquent " + money(r.delinquent_taxes) : "",
+     r.in_foreclosure ? "foreclosure flag" : ""].filter(Boolean).forEach(t => {
+      const g = document.createElement("span"); g.className = "tag"; g.textContent = t; m.append(g); });
+    const v = document.createElement("td");
+    if (r.auditor_url) { const l = document.createElement("a"); l.href = r.auditor_url; l.target = "_blank"; l.rel = "noopener"; l.textContent = money(r.market_value) || "Auditor"; v.append(l); }
+    else v.textContent = money(r.market_value);
+    tr.append(p, s, c, m, v, td(r.filed_date));
+    return tr;
+  }));
+}
+
+const head = document.getElementById("head");
+COLS.forEach(([k, label]) => {
+  const th = document.createElement("th"); th.textContent = label;
+  th.onclick = () => { sortDir = (sortKey === k) ? -sortDir : -1; sortKey = k; render(); };
+  head.append(th);
+});
+["q", "min", "match", "apart", "distress"].forEach(id => document.getElementById(id).addEventListener("input", render));
+
+fetch("hamilton_divorce.json").then(r => r.json()).then(d => {
+  rows = d.leads || [];
+  const m = d.meta || {};
+  document.getElementById("meta").textContent =
+    `Updated ${m.updated_utc || "?"} UTC · ${m.divorce_cases || 0} divorce/dissolution cases read · ${rows.length} homeowner leads · hover a row for the score breakdown`;
+  render();
+}).catch(e => { document.getElementById("meta").textContent = "Could not load data: " + e; });
+</script>
+</body>
+</html>
